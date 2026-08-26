@@ -8,7 +8,15 @@ name: Windows-only (loci M32 rung 1A)
 
 permissions: {}
 
+# `push` on this branch, not `workflow_dispatch`: dispatching by API requires the workflow to
+# exist on the fork's DEFAULT branch, and this fork's default is upstream master, which must stay
+# untouched so it keeps merging cleanly. Every upstream workflow here filters `push` to `master`
+# (`ci.yml`, `_codeql.yml`, `localize.yml`, `update-pages.yml`), so a push to this branch starts
+# exactly this job and nothing else.
 on:
+  push:
+    branches:
+      - loci-m32-rung1a
   workflow_dispatch:
 
 jobs:

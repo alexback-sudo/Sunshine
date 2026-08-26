@@ -1,0 +1,23 @@
+---
+# Added ONLY in this fork, to build what LizardByte's own CI never built: PR #5460's Windows
+# binary. The upstream runs on that PR are all `action_required` — a fork PR whose workflows no
+# maintainer ever approved — so there is no artifact to download and this is the substitute.
+# It calls upstream's OWN ci-windows.yml unchanged, so the binary is built by their recipe, not
+# by one of ours. Unsigned: the Azure signing inputs are optional and deliberately left empty.
+name: Windows-only (loci M32 rung 1A)
+
+permissions: {}
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    name: Windows
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci-windows.yml
+    with:
+      publish_release: 'false'
+      release_commit: ${{ github.sha }}
+      release_version: '0.0.0'

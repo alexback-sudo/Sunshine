@@ -1,0 +1,75 @@
+# loci's caller workflow for the managed streaming runtime.
+#
+# This file does not live here at runtime. `build.sh` installs it into a BRANCH OF A SUNSHINE FORK,
+# because `ci-windows.yml` is a *reusable* workflow and GitHub only lets `uses: ./…` reach one
+# inside the same repository. It is kept in loci's tree so the thing that produces our runtime is
+# reviewable where the rest of loci is reviewed, instead of existing only as fork state nobody
+# reads.
+#
+# The whole point is the one line under `uses:` — upstream's recipe, unchanged. loci contributes
+# the patch series and nothing else to how the binary is built. R-M32-1A proved this shape works
+# (`alexback-sudo/Sunshine`, run 32959972811, success) before M33 wrote it down.
+#
+# **Why `push` and not `workflow_dispatch`** (measured 2026-08-26, not guessed): dispatching by file
+# name requires the workflow to exist on the fork's DEFAULT branch — `gh workflow run` returned
+# `HTTP 404: workflow loci-runtime-build.yml not found on the default branch`. A push trigger reads
+# the workflow from the pushed branch itself, so the generated branch is self-contained and the fork
+# needs no provisioning step that could drift from this file.
+---
+name: loci-runtime-build
+
+on:
+  push:
+    branches:
+      - 'loci-runtime/**'
+  # Kept for manual re-runs. Only usable if this file is ever also placed on the default branch;
+  # the push trigger above is the road build.sh actually uses.
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: 'Version stamped into the binary (no leading v). Blank = derive from branch.'
+        required: false
+        type: string
+
+permissions: {}
+
+jobs:
+  # The version upstream stamps into the binary. Derived from the branch (`loci-runtime/vX` → `X`)
+  # so a push-triggered build needs no input, and a reusable-workflow `with:` can still take it —
+  # `with:` accepts `needs.*` outputs but cannot do string surgery on `github.ref_name` itself.
+  version:
+    name: Resolve version
+    runs-on: ubuntu-latest
+    outputs:
+      value: ${{ steps.pick.outputs.value }}
+    steps:
+      - id: pick
+        env:
+          INPUT_VERSION: ${{ inputs.release_version }}
+        run: |
+          v="$INPUT_VERSION"
+          if [ -z "$v" ]; then
+            v="${GITHUB_REF_NAME##*/}"
+            v="${v#v}"
+          fi
+          echo "value=$v" >> "$GITHUB_OUTPUT"
+          echo "release_version=$v"
+
+  windows:
+    name: Windows runtime
+    needs: version
+    # Upstream's own CI, called verbatim. Never edit this to point at a copy: the moment the recipe
+    # is ours, "the binary comes out of LizardByte's pipeline" stops being true and every claim in
+    # runtime-patches/README.md that rests on it has to be rewritten.
+    uses: ./.github/workflows/ci-windows.yml
+    with:
+      # No release is published from a fork build, ever. The artifact is downloaded by build.sh.
+      publish_release: 'false'
+      release_commit: ${{ github.sha }}
+      release_version: ${{ needs.version.outputs.value }}
+      # Azure signing inputs are optional upstream and are left empty on purpose: the output is
+      # UNSIGNED, and `hooks.nsh` installs it as a managed component rather than something the user
+      # is asked to trust by publisher.
+    # `secrets:` is deliberately absent rather than `inherit`. The signing steps are gated on
+    # `publish_release == 'true' && azure_signing_account != ''`, so nothing needs a secret, and a
+    # fork build should not be able to reach for one.
